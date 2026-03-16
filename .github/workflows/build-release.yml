@@ -39,12 +39,20 @@ jobs:
         run: |
           jq --arg v "${{ steps.extract.outputs.version }}" '.version = $v' package.json > tmp.json && mv tmp.json package.json
 
+      - name: Bump src/config.ts download URLs
+        run: |
+          V=${{ steps.extract.outputs.version }}
+          sed -i "s/VERSION: '[^']*'/VERSION: '$V'/" src/config.ts
+          sed -i "s|releases/download/v[^/]*/PromptPilot_[^']*_aarch64\.dmg|releases/download/v$V/PromptPilot_${V}_aarch64.dmg|g" src/config.ts
+          sed -i "s|releases/download/v[^/]*/PromptPilot_[^']*_x64\.dmg|releases/download/v$V/PromptPilot_${V}_x64.dmg|g" src/config.ts
+          sed -i "s|releases/download/v[^/]*/PromptPilot_[^']*_x64-setup\.exe|releases/download/v$V/PromptPilot_${V}_x64-setup.exe|g" src/config.ts
+
       - name: Commit version bumps back to private repo
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${{ secrets.SOURCE_REPO_PAT }}@github.com/rrmassey/PromptPilot_v2.5.git
-          git add desktop/src-tauri/Cargo.toml desktop/src-tauri/tauri.conf.json package.json
+          git add desktop/src-tauri/Cargo.toml desktop/src-tauri/tauri.conf.json package.json src/config.ts
           git diff --staged --quiet || git commit -m "chore: bump version to ${{ steps.extract.outputs.version }} [skip ci]"
           git push origin HEAD:main
 
