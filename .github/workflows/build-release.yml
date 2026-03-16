@@ -1,0 +1,148 @@
+name: Build and Release
+on:
+  repository_dispatch:
+    types: [build_release]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # ── Job 1: Bump versions in private repo config files ─────────────────────
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract.outputs.version }}
+    steps:
+      - name: Checkout private source
+        uses: actions/checkout@v4
+        with:
+          repository: rrmassey/PromptPilot_v2.5
+          token: ${{ secrets.SOURCE_REPO_PAT }}
+          ref: main
+
+      - name: Extract version from tag
+        id: extract
+        run: |
+          TAG=${{ github.event.client_payload.tag }}
+          VERSION=${TAG#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Bump Cargo.toml
+        run: |
+          sed -i "s/^version = \".*\"/version = \"${{ steps.extract.outputs.version }}\"/" desktop/src-tauri/Cargo.toml
+
+      - name: Bump tauri.conf.json
+        run: |
+          jq --arg v "${{ steps.extract.outputs.version }}" '.version = $v' desktop/src-tauri/tauri.conf.json > tmp.json && mv tmp.json desktop/src-tauri/tauri.conf.json
+
+      - name: Bump package.json
+        run: |
+          jq --arg v "${{ steps.extract.outputs.version }}" '.version = $v' package.json > tmp.json && mv tmp.json package.json
+
+      - name: Commit version bumps back to private repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.SOURCE_REPO_PAT }}@github.com/rrmassey/PromptPilot_v2.5.git
+          git add desktop/src-tauri/Cargo.toml desktop/src-tauri/tauri.conf.json package.json
+          git diff --staged --quiet || git commit -m "chore: bump version to ${{ steps.extract.outputs.version }} [skip ci]"
+          git push origin HEAD:main
+
+  # ── Job 2: Build matrix across all platforms ─────────────────────────────
+  release:
+    needs: prepare
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            rust-target: x86_64-pc-windows-msvc
+          - platform: macos-latest
+            rust-target: aarch64-apple-darwin
+          - platform: macos-15-intel
+            rust-target: x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            rust-target: x86_64-unknown-linux-gnu
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout private source (with bumped versions)
+        uses: actions/checkout@v4
+        with:
+          repository: rrmassey/PromptPilot_v2.5
+          token: ${{ secrets.SOURCE_REPO_PAT }}
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Frontend
+        run: npm run build
+
+      - name: Build and Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: desktop/src-tauri
+          tagName: ${{ github.event.client_payload.tag }}
+          releaseName: 'PromptPilot v__VERSION__'
+          releaseBody: 'See the assets to download this version and install.'
+          releaseDraft: false
+          prerelease: false
+          args: --target ${{ matrix.rust-target }}
+          includeUpdaterJson: true
+
+  # ── Job 3: Fix update.json URLs and commit back to private repo ──────────
+  fix-update-json:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout private source
+        uses: actions/checkout@v4
+        with:
+          repository: rrmassey/PromptPilot_v2.5
+          token: ${{ secrets.SOURCE_REPO_PAT }}
+          ref: main
+
+      - name: Fix update.json URLs to point to public repo
+        run: |
+          sed -i 's|rrmassey/PromptPilot_v2.5/releases/download|rrmassey/PromptPilot-releases/releases/download|g' public/update.json
+
+      - name: Commit fixed update.json back to private repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.SOURCE_REPO_PAT }}@github.com/rrmassey/PromptPilot_v2.5.git
+          git add public/update.json
+          git diff --staged --quiet || git commit -m "chore: fix update.json URLs to public repo [skip ci]"
+          git push origin HEAD:main
