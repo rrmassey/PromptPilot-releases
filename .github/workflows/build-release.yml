@@ -122,11 +122,40 @@ jobs:
           args: --target ${{ matrix.rust-target }}
           includeUpdaterJson: true
 
-  # ── Job 3: Fix update.json URLs and commit back to private repo ──────────
+  # ── Job 3: Rename latest.json → update.json, fix URLs, commit to private repo ─
   fix-update-json:
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
+      - name: Download latest.json from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.client_payload.tag }}
+        run: |
+          gh release download $TAG \
+            --repo rrmassey/PromptPilot-releases \
+            --pattern "latest.json" \
+            --dir ./assets
+
+      - name: Fix URLs and rename to update.json
+        run: |
+          sed 's|rrmassey/PromptPilot_v2.5/releases/download|rrmassey/PromptPilot-releases/releases/download|g' \
+            ./assets/latest.json > ./assets/update.json
+
+      - name: Upload update.json to release and delete latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.client_payload.tag }}
+        run: |
+          gh release upload $TAG ./assets/update.json \
+            --repo rrmassey/PromptPilot-releases \
+            --clobber
+          gh release delete-asset $TAG latest.json \
+            --repo rrmassey/PromptPilot-releases \
+            --yes
+
       - name: Checkout private source
         uses: actions/checkout@v4
         with:
@@ -134,15 +163,12 @@ jobs:
           token: ${{ secrets.SOURCE_REPO_PAT }}
           ref: main
 
-      - name: Fix update.json URLs to point to public repo
+      - name: Copy update.json to private repo and commit
         run: |
-          sed -i 's|rrmassey/PromptPilot_v2.5/releases/download|rrmassey/PromptPilot-releases/releases/download|g' public/update.json
-
-      - name: Commit fixed update.json back to private repo
-        run: |
+          cp ../assets/update.json public/update.json 2>/dev/null || cp ./assets/update.json public/update.json
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${{ secrets.SOURCE_REPO_PAT }}@github.com/rrmassey/PromptPilot_v2.5.git
           git add public/update.json
-          git diff --staged --quiet || git commit -m "chore: fix update.json URLs to public repo [skip ci]"
+          git diff --staged --quiet || git commit -m "chore: update update.json for ${{ github.event.client_payload.tag }} [skip ci]"
           git push origin HEAD:main
