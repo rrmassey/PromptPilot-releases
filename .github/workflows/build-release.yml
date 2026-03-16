@@ -137,19 +137,19 @@ jobs:
           gh release download $TAG \
             --repo rrmassey/PromptPilot-releases \
             --pattern "latest.json" \
-            --dir ./assets
+            --dir /tmp/release-assets
 
       - name: Fix URLs and rename to update.json
         run: |
           sed 's|rrmassey/PromptPilot_v2.5/releases/download|rrmassey/PromptPilot-releases/releases/download|g' \
-            ./assets/latest.json > ./assets/update.json
+            /tmp/release-assets/latest.json > /tmp/release-assets/update.json
 
-      - name: Upload update.json to release and delete latest.json
+      - name: Upload update.json and delete latest.json from release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.client_payload.tag }}
         run: |
-          gh release upload $TAG ./assets/update.json \
+          gh release upload $TAG /tmp/release-assets/update.json \
             --repo rrmassey/PromptPilot-releases \
             --clobber
           gh release delete-asset $TAG latest.json \
@@ -165,7 +165,7 @@ jobs:
 
       - name: Copy update.json to private repo and commit
         run: |
-          cp ../assets/update.json public/update.json 2>/dev/null || cp ./assets/update.json public/update.json
+          cp /tmp/release-assets/update.json public/update.json
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${{ secrets.SOURCE_REPO_PAT }}@github.com/rrmassey/PromptPilot_v2.5.git
