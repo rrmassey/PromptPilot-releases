@@ -59,7 +59,7 @@ PromptPilot follows a rigorous three-stage verification lifecycle:
 
 ### For Users
 The simplest way to use PromptPilot is to download the latest version of the desktop application directly from our website.
--   **Official Website:** [promptpilot.app](https://promptpilot.app)
+-   **Official Website:** [promptpilot.app](https://aipromptpilot.vercel.app)
 -   **Platforms:** Support for macOS (Apple Silicon & Intel) and Windows (x64 & ARM64).
 
 ---
