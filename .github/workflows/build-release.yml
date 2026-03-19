@@ -10,6 +10,8 @@ jobs:
   # ── Job 1: Bump versions in private repo config files ─────────────────────
   prepare:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.extract.outputs.version }}
       release_id: ${{ steps.create_release.outputs.release_id }}
