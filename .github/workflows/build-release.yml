@@ -139,32 +139,53 @@ jobs:
       - name: Build Frontend
         run: npm run build
 
-      # FIX 1 — CI: Bundle Ollama binary (Windows)
-      - name: Download Ollama binary (Windows v0.6.1)
+      # FIX 1 — CI: Bundle Ollama binary (Windows v0.18.2) # UPDATED
+      - name: Check disk space (Windows) # UPDATED
+        if: matrix.platform == 'windows-latest' # UPDATED
+        shell: pwsh # UPDATED
+        run: | # UPDATED
+          $disk = Get-PSDrive C # UPDATED
+          $freeGB = [math]::Round($disk.Free / 1GB, 2) # UPDATED
+          Write-Host "Free disk space: $freeGB GB" # UPDATED
+          if ($freeGB -lt 6) { # UPDATED
+            Write-Error "Insufficient disk space: $freeGB GB free, need at least 6 GB" # UPDATED
+            exit 1 # UPDATED
+          } # UPDATED
+
+      - name: Download Ollama binary (Windows v0.18.2) # UPDATED
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path desktop/src-tauri/resources/ollama/
-          curl -L -o ollama.zip https://github.com/ollama/ollama/releases/download/v0.6.1/ollama-windows-amd64.zip
+          curl -L -o ollama.zip https://github.com/ollama/ollama/releases/download/v0.18.2/ollama-windows-amd64.zip # UPDATED
           Expand-Archive -Path ollama.zip -DestinationPath desktop/src-tauri/resources/ollama/
           rm ollama.zip
 
-      # FIX 1 — CI: Bundle Ollama binary (macOS)
-      - name: Download Ollama binary (macOS v0.6.1)
+      # FIX 1 — CI: Bundle Ollama binary (macOS v0.18.2) # UPDATED
+      - name: Download Ollama binary (macOS v0.18.2) # UPDATED
         if: startsWith(matrix.platform, 'macos-')
         run: |
           mkdir -p desktop/src-tauri/resources/ollama/
-          curl -L -o ollama.zip https://github.com/ollama/ollama/releases/download/v0.6.1/Ollama-darwin.zip
+          curl -L -o ollama.zip https://github.com/ollama/ollama/releases/download/v0.18.2/Ollama-darwin.zip # UPDATED
           unzip -o ollama.zip -d desktop/src-tauri/resources/ollama/
           rm ollama.zip
 
-      # FIX 1 — CI: Bundle Ollama binary (Linux)
-      - name: Download Ollama binary (Linux v0.6.1)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          mkdir -p desktop/src-tauri/resources/ollama/
-          curl -L -o desktop/src-tauri/resources/ollama/ollama-linux-amd64 https://github.com/ollama/ollama/releases/download/v0.6.1/ollama-linux-amd64
-          chmod +x desktop/src-tauri/resources/ollama/ollama-linux-amd64
+      # FIX 1 — CI: Bundle Ollama binary (Linux v0.18.2) # UPDATED
+      - name: Download Ollama binary (Linux v0.18.2) # UPDATED
+        if: matrix.platform == 'ubuntu-22.04' # UPDATED
+        run: | # UPDATED
+          mkdir -p desktop/src-tauri/resources/ollama/ # UPDATED
+          curl -L -o /tmp/ollama-linux-amd64.tar.zst \ # UPDATED
+            https://github.com/ollama/ollama/releases/download/v0.18.2/ollama-linux-amd64.tar.zst # UPDATED
+          tar --zstd -xf /tmp/ollama-linux-amd64.tar.zst \ # UPDATED
+            -C desktop/src-tauri/resources/ollama/ # UPDATED
+          rm /tmp/ollama-linux-amd64.tar.zst # UPDATED
+          # Verify extraction produced the expected binary # UPDATED
+          if [ ! -f "desktop/src-tauri/resources/ollama/bin/ollama" ]; then # UPDATED
+            echo "ERROR: ollama binary not found after extraction" && exit 1 # UPDATED
+          fi # UPDATED
+          chmod +x desktop/src-tauri/resources/ollama/bin/ollama # UPDATED
+          echo "Ollama Linux binary extracted successfully" # UPDATED
 
       - name: Build and Release
         uses: tauri-apps/tauri-action@v0
