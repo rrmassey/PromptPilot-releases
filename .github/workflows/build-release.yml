@@ -63,11 +63,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.client_payload.tag }}
         run: |
-          RELEASE_ID=$(gh release create "$TAG" \
+          gh release create "$TAG" \
             --repo rrmassey/PromptPilot-releases \
             --title "PromptPilot $TAG" \
-            --notes "See the assets to download this version and install." \
-            --json id --jq '.id')
+            --notes "See the assets to download this version and install."
+
+          RELEASE_ID=$(gh api \
+            --repo rrmassey/PromptPilot-releases \
+            /repos/rrmassey/PromptPilot-releases/releases/tags/"$TAG" \
+            --jq '.id')
           echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
 
   # ── Job 2: Build matrix across all platforms ─────────────────────────────
