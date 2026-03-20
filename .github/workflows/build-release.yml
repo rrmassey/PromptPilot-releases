@@ -96,8 +96,6 @@ jobs:
             rust-target: aarch64-apple-darwin
           - platform: macos-15-intel
             rust-target: x86_64-apple-darwin
-          - platform: ubuntu-22.04
-            rust-target: x86_64-unknown-linux-gnu
 
     runs-on: ${{ matrix.platform }}
 
@@ -120,19 +118,6 @@ jobs:
         with:
           targets: ${{ matrix.rust-target }}
 
-      - name: Install Linux system dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libgtk-3-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev
-
       - name: Install dependencies
         run: npm ci
 
@@ -147,22 +132,6 @@ jobs:
           curl -L -o ollama.zip https://github.com/ollama/ollama/releases/download/v0.18.2/Ollama-darwin.zip
           unzip -o ollama.zip -d desktop/src-tauri/resources/ollama/
           rm ollama.zip
-
-      # FIX 1 — CI: Bundle Ollama binary (Linux v0.18.2)
-      - name: Download Ollama binary (Linux v0.18.2)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          mkdir -p desktop/src-tauri/resources/ollama/
-          curl -L -o /tmp/ollama-linux-amd64.tar.zst \
-            https://github.com/ollama/ollama/releases/download/v0.18.2/ollama-linux-amd64.tar.zst
-          tar --zstd -xf /tmp/ollama-linux-amd64.tar.zst \
-            -C desktop/src-tauri/resources/ollama/
-          rm /tmp/ollama-linux-amd64.tar.zst
-          if [ ! -f "desktop/src-tauri/resources/ollama/bin/ollama" ]; then
-            echo "ERROR: ollama binary not found after extraction" && exit 1
-          fi
-          chmod +x desktop/src-tauri/resources/ollama/bin/ollama
-          echo "Ollama Linux binary extracted successfully"
 
       - name: Build and Release
         uses: tauri-apps/tauri-action@v0
