@@ -124,14 +124,91 @@ jobs:
       - name: Build Frontend
         run: npm run build
 
-      # FIX 1 — CI: Bundle Ollama binary (macOS v0.18.2)
-      - name: Download Ollama binary (macOS v0.18.2)
-        if: startsWith(matrix.platform, 'macos-')
+      # Latest ggml-org/llama.cpp release: full Windows zips into cuda/vulkan/cpu (DLLs beside llama-server.exe)
+      - name: Download llama-server bundles (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p desktop/src-tauri/resources/ollama/
-          curl -L -o ollama.zip https://github.com/ollama/ollama/releases/download/v0.18.2/Ollama-darwin.zip
-          unzip -o ollama.zip -d desktop/src-tauri/resources/ollama/
-          rm ollama.zip
+          $ErrorActionPreference = "Stop"
+          $api = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
+          $headers = @{
+            Accept = "application/vnd.github+json"
+            "User-Agent" = "PromptPilot-CI"
+            Authorization = "Bearer $env:GITHUB_TOKEN"
+          }
+          $release = Invoke-RestMethod -Uri $api -Headers $headers
+          function Expand-LlamaBundle {
+            param(
+              [Parameter(Mandatory)] [string]$LikePattern,
+              [Parameter(Mandatory)] [string]$DestRel
+            )
+            $asset = $release.assets | Where-Object { $_.name -like $LikePattern } | Select-Object -First 1
+            if (-not $asset) {
+              throw "No llama.cpp asset matching: $LikePattern"
+            }
+            $zipPath = Join-Path $env:RUNNER_TEMP $asset.name
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -Headers $headers
+            $dest = Join-Path $PWD $DestRel
+            New-Item -ItemType Directory -Path $dest -Force | Out-Null
+            Expand-Archive -Path $zipPath -DestinationPath $dest -Force
+            Remove-Item $zipPath -Force
+          }
+          $base = "desktop/src-tauri/resources/llama-server"
+          Expand-LlamaBundle -LikePattern "llama-*-bin-win-cuda-12.4-x64.zip" -DestRel (Join-Path $base "cuda")
+          Expand-LlamaBundle -LikePattern "llama-*-bin-win-vulkan-x64.zip" -DestRel (Join-Path $base "vulkan")
+          Expand-LlamaBundle -LikePattern "llama-*-bin-win-cpu-x64.zip" -DestRel (Join-Path $base "cpu")
+
+      # Latest ggml-org/llama.cpp release: macOS tarball (Metal) includes dylibs next to llama-server
+      - name: Download llama-server bundle (macOS)
+        if: startsWith(matrix.platform, 'macos-')
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          API_URL="https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
+          REL_JSON=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "User-Agent: PromptPilot-CI" \
+            "$API_URL")
+          case "${{ matrix.rust-target }}" in
+            aarch64-apple-darwin)
+              SUFFIX="bin-macos-arm64.tar.gz"
+              ;;
+            x86_64-apple-darwin)
+              SUFFIX="bin-macos-x64.tar.gz"
+              ;;
+            *)
+              echo "Unsupported macOS rust target: ${{ matrix.rust-target }}"
+              exit 1
+              ;;
+          esac
+          NAME=$(echo "$REL_JSON" | jq -r --arg sfx "$SUFFIX" '.assets[] | select(.name|endswith($sfx)) | .name' | head -1)
+          if [ -z "$NAME" ] || [ "$NAME" = "null" ]; then
+            echo "No asset ending with ${SUFFIX} in latest llama.cpp release"
+            exit 1
+          fi
+          URL=$(echo "$REL_JSON" | jq -r --arg n "$NAME" '.assets[] | select(.name==$n) | .browser_download_url')
+          WORK=$(mktemp -d)
+          curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "User-Agent: PromptPilot-CI" \
+            -o "$WORK/$NAME" \
+            "$URL"
+          tar xzf "$WORK/$NAME" -C "$WORK"
+          ROOT=$(find "$WORK" -mindepth 1 -maxdepth 1 -type d -name 'llama-*' | head -1)
+          if [ -z "$ROOT" ]; then
+            echo "Could not find llama-* root directory in archive"
+            exit 1
+          fi
+          DEST="desktop/src-tauri/resources/llama-server"
+          mkdir -p "$DEST"
+          cp -R "$ROOT"/* "$DEST/"
+          chmod +x "$DEST/llama-server"
 
       - name: Build and Release
         uses: tauri-apps/tauri-action@v0
