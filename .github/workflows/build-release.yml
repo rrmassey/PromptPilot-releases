@@ -144,9 +144,15 @@ jobs:
               [Parameter(Mandatory)] [string]$LikePattern,
               [Parameter(Mandatory)] [string]$DestRel
             )
-            $asset = $release.assets | Where-Object { $_.name -like $LikePattern } | Select-Object -First 1
+            $matches = $release.assets | Where-Object { $_.name -like $LikePattern }
+            $asset = $matches | Select-Object -First 1
             if (-not $asset) {
               throw "No llama.cpp asset matching: $LikePattern"
+            }
+            if (($matches | Measure-Object).Count -gt 1) {
+              Write-Host "Multiple assets matched '$LikePattern'; selecting first: $($asset.name)"
+            } else {
+              Write-Host "Selected asset: $($asset.name)"
             }
             $zipPath = Join-Path $env:RUNNER_TEMP $asset.name
             Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -Headers $headers
@@ -156,7 +162,7 @@ jobs:
             Remove-Item $zipPath -Force
           }
           $base = "desktop/src-tauri/resources/llama-server"
-          Expand-LlamaBundle -LikePattern "llama-*-bin-win-cuda-12.4-x64.zip" -DestRel (Join-Path $base "cuda")
+          Expand-LlamaBundle -LikePattern "llama-*-bin-win-cuda-*-x64.zip" -DestRel (Join-Path $base "cuda")
           Expand-LlamaBundle -LikePattern "llama-*-bin-win-vulkan-x64.zip" -DestRel (Join-Path $base "vulkan")
           Expand-LlamaBundle -LikePattern "llama-*-bin-win-cpu-x64.zip" -DestRel (Join-Path $base "cpu")
 
@@ -209,6 +215,26 @@ jobs:
           mkdir -p "$DEST"
           cp -R "$ROOT"/* "$DEST/"
           chmod +x "$DEST/llama-server"
+
+      - name: Verify llama-server binaries exist (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $bin = Get-ChildItem -Path "desktop/src-tauri/resources/llama-server" -Recurse -Filter "llama-server.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $bin) {
+            throw "llama-server.exe not found in resources — aborting build"
+          }
+          Write-Host "Found bundled binary: $($bin.FullName)"
+
+      - name: Verify llama-server binary exists (macOS)
+        if: startsWith(matrix.platform, 'macos-')
+        shell: bash
+        run: |
+          if [ ! -f "desktop/src-tauri/resources/llama-server/llama-server" ]; then
+            echo "llama-server binary missing!"
+            exit 1
+          fi
+          echo "Found bundled binary: desktop/src-tauri/resources/llama-server/llama-server"
 
       - name: Build and Release
         uses: tauri-apps/tauri-action@v0
