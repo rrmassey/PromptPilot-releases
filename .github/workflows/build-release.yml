@@ -1,3 +1,7 @@
+# This is the workflow used for the public release repository (https://github.com/rrmassey/PromptPilot-releases). 
+# This is the only workflow that is public and visible to the world, the rest are private.
+# This workflow is not to be committed to the private repo (PromptPilot_v2.5), and instead I will have to manually commit it to the public repo (PromptPilot-releases).
+
 name: Build and Release
 on:
   repository_dispatch:
@@ -17,7 +21,7 @@ jobs:
       release_id: ${{ steps.create_release.outputs.release_id }}
     steps:
       - name: Checkout private source
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: rrmassey/PromptPilot_v2.5
           token: ${{ secrets.SOURCE_REPO_PAT }}
@@ -101,20 +105,20 @@ jobs:
 
     steps:
       - name: Checkout private source (with bumped versions)
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: rrmassey/PromptPilot_v2.5
           token: ${{ secrets.SOURCE_REPO_PAT }}
           ref: main
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20'
           cache: 'npm'
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           targets: ${{ matrix.rust-target }}
 
@@ -123,6 +127,130 @@ jobs:
 
       - name: Build Frontend
         run: npm run build
+
+      - name: Validate Python supply-chain policy
+        run: node scripts/security/validate-python-supply-chain.mjs
+
+      - name: Provision bundled Python runtime (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          PY_RUNTIME_SHA_WINDOWS: ${{ secrets.PY_RUNTIME_SHA_WINDOWS }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $manifestPath = "desktop/src-tauri/python/runtime-manifest.json"
+          $manifest = Get-Content -Path $manifestPath -Raw | ConvertFrom-Json
+          $entry = $manifest.pythonBuildStandalone."windows-x86_64"
+          if (-not $entry) { throw "Missing windows-x86_64 runtime entry in manifest." }
+          $runtimeUrl = [string]$entry.url
+          $runtimeSha = ([string]$entry.sha256).ToLowerInvariant()
+          if ($runtimeSha.StartsWith("replace_")) {
+            if ([string]::IsNullOrWhiteSpace($env:PY_RUNTIME_SHA_WINDOWS)) {
+              throw "Missing PY_RUNTIME_SHA_WINDOWS secret for placeholder manifest SHA."
+            }
+            $runtimeSha = $env:PY_RUNTIME_SHA_WINDOWS.ToLowerInvariant()
+          }
+          $lockFile = [string]$manifest.pythonPackages.lockFile
+          $host = ([uri]$runtimeUrl).Host
+          if (-not ($manifest.allowedHosts -contains $host)) {
+            throw "Runtime host '$host' is not allowlisted."
+          }
+
+          $archivePath = Join-Path $env:RUNNER_TEMP "python-runtime.tar.gz"
+          Invoke-WebRequest -Uri $runtimeUrl -OutFile $archivePath
+          $actualSha = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualSha -ne $runtimeSha) {
+            throw "Python runtime checksum mismatch for Windows."
+          }
+
+          $stageDir = Join-Path $env:RUNNER_TEMP "python-runtime-stage"
+          New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
+          tar -xzf $archivePath -C $stageDir
+
+          $pythonExe = Get-ChildItem -Path $stageDir -Recurse -File -Filter "python.exe" | Select-Object -First 1
+          if (-not $pythonExe) { throw "Unable to locate python.exe in extracted runtime." }
+          $runtimeRoot = $pythonExe.Directory.FullName
+          if ($runtimeRoot -match '[\\/](bin|Scripts)$') {
+            $runtimeRoot = Split-Path $runtimeRoot -Parent
+          }
+
+          $runtimeDest = Join-Path $PWD "desktop/src-tauri/resources/python-runtime"
+          if (Test-Path $runtimeDest) {
+            Remove-Item -Path $runtimeDest -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $runtimeDest -Force | Out-Null
+          Copy-Item -Path (Join-Path $runtimeRoot "*") -Destination $runtimeDest -Recurse -Force
+
+          & (Join-Path $runtimeDest "python.exe") -m pip install --upgrade pip
+          & (Join-Path $runtimeDest "python.exe") -m pip install --no-cache-dir -r $lockFile
+          & (Join-Path $runtimeDest "python.exe") -c "import fitz; print(fitz.__doc__[:40])"
+
+      - name: Provision bundled Python runtime (macOS)
+        if: startsWith(matrix.platform, 'macos-')
+        shell: bash
+        env:
+          PY_RUNTIME_SHA_MACOS_ARM64: ${{ secrets.PY_RUNTIME_SHA_MACOS_ARM64 }}
+          PY_RUNTIME_SHA_MACOS_X64: ${{ secrets.PY_RUNTIME_SHA_MACOS_X64 }}
+        run: |
+          set -euo pipefail
+          MANIFEST_PATH="desktop/src-tauri/python/runtime-manifest.json"
+          LOCK_FILE=$(jq -r '.pythonPackages.lockFile' "$MANIFEST_PATH")
+          case "${{ matrix.rust-target }}" in
+            aarch64-apple-darwin)
+              ENTRY_KEY="macos-aarch64"
+              SHA_OVERRIDE="${PY_RUNTIME_SHA_MACOS_ARM64:-}"
+              ;;
+            x86_64-apple-darwin)
+              ENTRY_KEY="macos-x86_64"
+              SHA_OVERRIDE="${PY_RUNTIME_SHA_MACOS_X64:-}"
+              ;;
+            *)
+              echo "Unsupported macOS target: ${{ matrix.rust-target }}"
+              exit 1
+              ;;
+          esac
+
+          RUNTIME_URL=$(jq -r --arg key "$ENTRY_KEY" '.pythonBuildStandalone[$key].url' "$MANIFEST_PATH")
+          RUNTIME_SHA=$(jq -r --arg key "$ENTRY_KEY" '.pythonBuildStandalone[$key].sha256' "$MANIFEST_PATH")
+          if [[ "${RUNTIME_SHA}" == REPLACE_* || "${RUNTIME_SHA}" == replace_* ]]; then
+            if [ -z "${SHA_OVERRIDE}" ]; then
+              echo "Missing SHA override secret for ${ENTRY_KEY} runtime."
+              exit 1
+            fi
+            RUNTIME_SHA="${SHA_OVERRIDE}"
+          fi
+          HOST=$(echo "$RUNTIME_URL" | awk -F/ '{print $3}')
+          if ! jq -e --arg host "$HOST" '.allowedHosts | index($host)' "$MANIFEST_PATH" >/dev/null; then
+            echo "Runtime host '$HOST' is not allowlisted."
+            exit 1
+          fi
+
+          ARCHIVE_PATH="$RUNNER_TEMP/python-runtime.tar.gz"
+          curl -fsSL -o "$ARCHIVE_PATH" "$RUNTIME_URL"
+          ACTUAL_SHA=$(shasum -a 256 "$ARCHIVE_PATH" | awk '{print $1}')
+          if [ "${ACTUAL_SHA}" != "${RUNTIME_SHA}" ]; then
+            echo "Python runtime checksum mismatch for ${ENTRY_KEY}."
+            exit 1
+          fi
+
+          STAGE_DIR="$(mktemp -d)"
+          export STAGE_DIR
+          tar xzf "$ARCHIVE_PATH" -C "$STAGE_DIR"
+          PYTHON_PATH=$(find "$STAGE_DIR" -type f -name "python3" -path "*/bin/*" | head -1)
+          if [ -z "${PYTHON_PATH}" ]; then
+            echo "Unable to locate python3 in extracted runtime."
+            exit 1
+          fi
+
+          RUNTIME_DEST="desktop/src-tauri/resources/python-runtime"
+          mkdir -p "$RUNTIME_DEST"
+          ROOT_DIR="$(cd "$(dirname "$PYTHON_PATH")/.." && pwd)"
+          cp -R "$ROOT_DIR"/. "$RUNTIME_DEST"/
+          chmod +x "$RUNTIME_DEST/bin/python3"
+
+          "$RUNTIME_DEST/bin/python3" -m pip install --upgrade pip
+          "$RUNTIME_DEST/bin/python3" -m pip install --no-cache-dir -r "$LOCK_FILE"
+          "$RUNTIME_DEST/bin/python3" -c "import fitz; print(fitz.__doc__[:40])"
 
       # Latest ggml-org/llama.cpp release: full Windows zips into cuda/vulkan/cpu (DLLs beside llama-server.exe)
       - name: Download llama-server bundles (Windows)
@@ -144,15 +272,9 @@ jobs:
               [Parameter(Mandatory)] [string]$LikePattern,
               [Parameter(Mandatory)] [string]$DestRel
             )
-            $matches = $release.assets | Where-Object { $_.name -like $LikePattern }
-            $asset = $matches | Select-Object -First 1
+            $asset = $release.assets | Where-Object { $_.name -like $LikePattern } | Select-Object -First 1
             if (-not $asset) {
               throw "No llama.cpp asset matching: $LikePattern"
-            }
-            if (($matches | Measure-Object).Count -gt 1) {
-              Write-Host "Multiple assets matched '$LikePattern'; selecting first: $($asset.name)"
-            } else {
-              Write-Host "Selected asset: $($asset.name)"
             }
             $zipPath = Join-Path $env:RUNNER_TEMP $asset.name
             Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -Headers $headers
@@ -162,7 +284,7 @@ jobs:
             Remove-Item $zipPath -Force
           }
           $base = "desktop/src-tauri/resources/llama-server"
-          Expand-LlamaBundle -LikePattern "llama-*-bin-win-cuda-*-x64.zip" -DestRel (Join-Path $base "cuda")
+          Expand-LlamaBundle -LikePattern "llama-*-bin-win-cuda-12.4-x64.zip" -DestRel (Join-Path $base "cuda")
           Expand-LlamaBundle -LikePattern "llama-*-bin-win-vulkan-x64.zip" -DestRel (Join-Path $base "vulkan")
           Expand-LlamaBundle -LikePattern "llama-*-bin-win-cpu-x64.zip" -DestRel (Join-Path $base "cpu")
 
@@ -216,32 +338,23 @@ jobs:
           cp -R "$ROOT"/* "$DEST/"
           chmod +x "$DEST/llama-server"
 
-      - name: Verify llama-server binaries exist (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
-        run: |
-          $bin = Get-ChildItem -Path "desktop/src-tauri/resources/llama-server" -Recurse -Filter "llama-server.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $bin) {
-            throw "llama-server.exe not found in resources — aborting build"
-          }
-          Write-Host "Found bundled binary: $($bin.FullName)"
-
-      - name: Verify llama-server binary exists (macOS)
-        if: startsWith(matrix.platform, 'macos-')
+      - name: Verify bundled runtime files before publish
         shell: bash
         run: |
-          if [ ! -f "desktop/src-tauri/resources/llama-server/llama-server" ]; then
-            echo "llama-server binary missing!"
-            exit 1
+          set -euo pipefail
+          if [ "${{ matrix.platform }}" = "windows-latest" ]; then
+            test -f desktop/src-tauri/resources/python-runtime/python.exe
+          else
+            test -f desktop/src-tauri/resources/python-runtime/bin/python3
           fi
-          echo "Found bundled binary: desktop/src-tauri/resources/llama-server/llama-server"
 
       - name: Build and Release
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          PROMPTPILOT_PYTHON_BIN: ""
         with:
           projectPath: desktop/src-tauri
           releaseId: ${{ needs.prepare.outputs.release_id }}
@@ -283,7 +396,7 @@ jobs:
             --yes
 
       - name: Checkout private source
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: rrmassey/PromptPilot_v2.5
           token: ${{ secrets.SOURCE_REPO_PAT }}
