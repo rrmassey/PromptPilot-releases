@@ -1,72 +1,91 @@
-# PromptPilot: Evidence-Based AI Verification & Grounding
+# PromptPilot: Evidence-Based AI Citation Verification & Research Grounding
 
-PromptPilot is a high-fidelity verification engine designed to neutralize AI hallucinations and uphold academic integrity. It bridges the gap between generative AI and empirical rigor by orchestrating ground-truth data retrieval and independent AI-driven adjudication.
+PromptPilot is a local-first desktop verification engine designed to cross-examine AI-generated citations and claims against verified scholarly registries. It bridges the gap between generative AI and empirical rigor through real-time bibliographic retrieval, client-side PDF extraction, and local LLM reasoning.
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![Privacy: Local-First](https://img.shields.io/badge/Privacy-Local--First-blue.svg)]()
+[![Privacy: Local-First](https://img.shields.io/badge/Privacy-100%25%20Local--First-brightgreen.svg)]()
+[![Platform: macOS | Windows](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-lightgrey.svg)]()
 
 ---
 
 ## 1. What is PromptPilot?
 
-PromptPilot is a specialized platform for researchers, students, and academics who rely on Large Language Models (LLMs) but require absolute factual accuracy. 
+PromptPilot is a specialized desktop platform for researchers, students, and professionals who use Large Language Models (LLMs) and require independent verification of citations, quotes, and factual claims.
 
-Unlike standard LLM interfaces that rely on the model's static training data, PromptPilot treats the LLM as an expert adjudicator that must base its decisions on real-time evidence gathered from trusted external sources. The result is a system that identifies claims, gathers supporting or refuting evidence, and provides a transparent audit trail for every verification.
+Rather than relying on static training data or unverified web summaries, PromptPilot extracts bibliographic anchors from user documents and cross-references them against public academic databases and verified search APIs. The result is a transparent, auditable breakdown showing whether a referenced paper, DOI, or claim exists in real-world scholarly literature.
 
 ---
 
 ## 2. Why PromptPilot?
 
-The rapid adoption of AI in academia has introduced two critical challenges:
-1.  **Hallucinations:** LLMs frequently manufacture plausible-sounding but entirely fabricated citations and facts.
-2.  **Data Privacy:** Uploading sensitive research or unfinished manuscripts to cloud AI providers poses significant intellectual property risks.
+The rapid adoption of generative AI in research and writing has introduced two major challenges:
+1. **Citation Hallucinations:** LLMs frequently produce plausible-sounding but fabricated authors, paper titles, journal names, and non-existent DOIs.
+2. **Data Confidentiality:** Transmitting sensitive manuscripts, proprietary drafts, or unfinished research to third-party cloud servers poses intellectual property and privacy risks.
 
-PromptPilot was built to solve these problems by prioritizing **grounding** and **privacy**. By combining specialized RAG (Retrieval-Augmented Generation) workflows with a local-first desktop architecture, PromptPilot allows researchers to verify their work without compromising the security of their data.
+PromptPilot solves both challenges through a **strictly local-first architecture**: your documents, chat sessions, and extracted text never leave your machine during local AI processing.
 
 ---
 
 ## 3. Core Capabilities
 
--   **Hybrid RAG Architecture:** Interrogates document context alongside real-time searches from scholarly registries (CrossRef, OpenAlex) and the live web (Brave Search).
--   **Local-First Privacy:** All primary document processing, AI detection, and citation highlights occur locally on the user's machine.
--   **Tiered Adjudication:** Supports both high-speed model grounding and deep-reasoning adjudication for complex factual analysis.
--   **Local LLM Integration:** Full support for Ollama and LM Studio, enabling a completely offline verification pipeline.
--   **High-Fidelity Reporting:** Generates structured verification logs and PDF reports that detail the exact source and reasoning used for each claim.
+- **Academic Registry Grounding:** Queries public scholarly databases (CrossRef, OpenAlex, ArXiv, Wikipedia, Semantic Scholar, Unpaywall) to verify paper existence, authors, publication years, and DOIs.
+- **Local-First Processing:** Document text extraction and local LLM inferences execute entirely on your device via loopback interfaces (`127.0.0.1`).
+- **Integrated Local LLM Engine:** Native support for built-in local inference (`llama-server` / GGUF), as well as Ollama and LM Studio servers.
+- **Client-Side Document Parsing:** High-performance local text extraction for PDFs (via Apache-2.0 LiteParse) and DOCX files.
+- **Pre-Flight PII Redaction:** Automatically scrubs personal identifiable information (emails, phone numbers, API keys) from search queries before external registry lookups.
+- **Hardware-Backed Credential Security:** Search API keys (Brave Search, Tavily) are encrypted and stored in your native OS credential vault (macOS Keychain / Windows Credential Manager).
+- **Exportable Audit Reports:** Generates structured verification logs and PDF reports complete with regulatory disclaimers and methodology audit trails.
 
 ---
 
-## 4. Methodology
+## 4. Verification Methodology
 
-PromptPilot follows a rigorous three-stage verification lifecycle:
+PromptPilot follows a structured verification pipeline:
 
-1.  **AI Detection:** Specialized prompts parse the text to identify potential citations and factual claims.
-2.  **Evidence Gathering:** The engine queries academic registries and the web to retrieve bibliographic metadata and source content.
-3.  **Adjudication:** A Reasoning Model (e.g., Gemini 2.0 Pro) analyzes the "evidence packet" using a priority-based logic: Direct Link → Scholarly Database → Web Grounding.
+1. **Extraction & Parsing:** Client-side extractors parse the document text, separating prose, citations (APA, MLA, Chicago, IEEE), and inline markers.
+2. **Bibliographic Grounding:** The engine searches scholarly registries for candidate DOI, title, and author matches using rate-limited, polite API pools.
+3. **Adjudication & Cross-Examination:** The model evaluates the gathered evidence packet against the document claim using deterministic verification rules (Verified, Unverified, Ambiguous, Contradicted).
 
 ---
 
 ## 5. Technical Implementation
 
--   **Frontend:** React 18, Vite, TypeScript (Strict Mode).
--   **Desktop Bridge:** Tauri (Rust) for native OS integration and local security.
--   **Styling:** A custom "High-Contrast Matte" design system utilizing Vanilla CSS and glassmorphism.
--   **Backend:** Firebase Cloud Functions (BFF) for secure provider orchestration and API key management.
--   **AI Orchestration:** Native integration with Gemini SDK and local Ollama servers.
+- **Desktop Framework:** Tauri v2 (Rust) for native OS performance, memory isolation, and OS Keyring integration.
+- **Frontend:** React 18, TypeScript (Strict Mode), Vite.
+- **PDF Extraction Engine:** LiteParse (Apache-2.0 / PDFium) bundled runtime.
+- **Styling:** Custom High-Contrast Matte design system with Vanilla CSS and responsive glassmorphism.
+- **Local Storage:** Client-side IndexedDB (`LocalCacheService`) and AES-256-GCM encrypted local state. Zero cloud database dependency.
 
 ---
 
-## 6. Getting Started
+## 6. Installation & Downloads
 
-### For Users
-The simplest way to use PromptPilot is to download the latest version of the desktop application directly from our website.
--   **Official Website:** [promptpilot.app](https://aipromptpilot.vercel.app)
--   **Platforms:** Support for macOS (Apple Silicon & Intel) and Windows (x64 & ARM64).
+PromptPilot is distributed as a standalone desktop application for macOS and Windows.
+
+- **Official Website:** [aipromptpilot.vercel.app](https://aipromptpilot.vercel.app)
+- **Direct Downloads:**
+  - **macOS:** Download the `.dmg` installer (Apple Silicon & Intel supported) from the website.
+  - **Windows:** Download the `.exe` / `.msi` installer from the website.
+
+Simply download and run the installer for your platform to get started with the Free Community Tier.
 
 ---
 
 ## 7. Privacy & Data Governance
 
-PromptPilot is designed with a zero-knowledge approach to user data.
--   **No Cloud Caching:** User-uploaded document text is never cached on our servers.
--   **Secure Credential Storage:** API keys are stored in the native OS vault through the Tauri bridge.
--   **Local Persistence:** Session data, chat history, and verification results remain on your local hardware.
+PromptPilot is engineered from the ground up with a zero-knowledge privacy philosophy:
+- **No Central Document Storage:** PromptPilot operates no servers that store your documents, prompts, or chat histories.
+- **Zero In-App Telemetry on Desktop:** The desktop application contains no analytics SDKs, advertising trackers, or behavioral telemetry.
+- **Data Portability & Erasure:** Full compliance with GDPR (Art. 17 & 20) and CCPA—export all data to JSON or purge all local stores with a single click in Settings.
+- **Opt-In Web Analytics:** Public website analytics are strictly opt-in and automatically respect browser Global Privacy Control (GPC) signals.
+
+---
+
+## 8. License & Open Source
+
+This project is released under the [MIT License](LICENSE). All bundled sidecar extraction components use permissive open-source licenses (Apache-2.0 / BSD / MIT).
+
+---
+
+## 9. Legal & Regulatory Advisory
+
+*PromptPilot is an academic research assistance tool and verification aid. Automated AI verifications are probabilistic and should not be used as a substitute for primary-source review. PromptPilot does not provide legal, financial, or medical advice.*
