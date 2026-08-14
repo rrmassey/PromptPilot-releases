@@ -80,12 +80,6 @@ PromptPilot is engineered from the ground up with a zero-knowledge privacy philo
 
 ---
 
-## 8. License & Open Source
-
-This project is released under the [MIT License](LICENSE). All bundled sidecar extraction components use permissive open-source licenses (Apache-2.0 / BSD / MIT).
-
----
-
-## 9. Legal & Regulatory Advisory
+## 8. Legal & Regulatory Advisory
 
 *PromptPilot is an academic research assistance tool and verification aid. Automated AI verifications are probabilistic and should not be used as a substitute for primary-source review. PromptPilot does not provide legal, financial, or medical advice.*
