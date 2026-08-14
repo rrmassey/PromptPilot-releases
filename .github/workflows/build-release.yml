@@ -183,7 +183,7 @@ jobs:
 
           & (Join-Path $runtimeDest "python.exe") -m pip install --upgrade pip
           & (Join-Path $runtimeDest "python.exe") -m pip install --no-cache-dir -r $lockFile
-          & (Join-Path $runtimeDest "python.exe") -c "import fitz; print(fitz.__doc__[:40])"
+          & (Join-Path $runtimeDest "python.exe") -c "from liteparse import LiteParse; print('liteparse-ok')"
 
       - name: Provision bundled Python runtime (macOS)
         if: startsWith(matrix.platform, 'macos-')
@@ -250,7 +250,7 @@ jobs:
 
           "$RUNTIME_DEST/bin/python3" -m pip install --upgrade pip
           "$RUNTIME_DEST/bin/python3" -m pip install --no-cache-dir -r "$LOCK_FILE"
-          "$RUNTIME_DEST/bin/python3" -c "import fitz; print(fitz.__doc__[:40])"
+          "$RUNTIME_DEST/bin/python3" -c "from liteparse import LiteParse; print('liteparse-ok')"
 
       # Latest ggml-org/llama.cpp release: full Windows zips into cuda/vulkan/cpu (DLLs beside llama-server.exe)
       - name: Download llama-server bundles (Windows)
