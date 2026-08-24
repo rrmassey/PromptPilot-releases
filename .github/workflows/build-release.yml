@@ -1,6 +1,4 @@
 # This is the workflow used for the public release repository (https://github.com/rrmassey/PromptPilot-releases). 
-# This is the only workflow that is public and visible to the world, the rest are private.
-# This workflow is not to be committed to the private repo (PromptPilot_v2.5), and instead I will have to manually commit it to the public repo (PromptPilot-releases).
 
 name: Build and Release
 on:
@@ -114,7 +112,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install Rust
