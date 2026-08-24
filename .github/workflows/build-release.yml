@@ -250,7 +250,8 @@ jobs:
           "$RUNTIME_DEST/bin/python3" -m pip install --no-cache-dir -r "$LOCK_FILE"
           "$RUNTIME_DEST/bin/python3" -c "from liteparse import LiteParse; print('liteparse-ok')"
 
-      # Latest ggml-org/llama.cpp release: full Windows zips into cuda/vulkan/cpu (DLLs beside llama-server.exe)
+      # Latest ggml-org/llama.cpp prerelease: full Windows zips into cuda/vulkan/cpu (DLLs beside llama-server.exe)
+      # Note: binaries are published as prereleases (bXXXX); /releases/latest returns non-prerelease v0.2.0 with no assets.
       - name: Download llama-server bundles (Windows)
         if: matrix.platform == 'windows-latest'
         shell: pwsh
@@ -258,13 +259,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
-          $api = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
           $headers = @{
             Accept = "application/vnd.github+json"
             "User-Agent" = "PromptPilot-CI"
             Authorization = "Bearer $env:GITHUB_TOKEN"
           }
-          $release = Invoke-RestMethod -Uri $api -Headers $headers
+          $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20" -Headers $headers
+          $release = $releases | Where-Object { $_.prerelease -eq $true } | Select-Object -First 1
+          if (-not $release) { throw "No prerelease found for ggml-org/llama.cpp" }
           function Expand-LlamaBundle {
             param(
               [Parameter(Mandatory)] [string]$LikePattern,
@@ -286,7 +288,8 @@ jobs:
           Expand-LlamaBundle -LikePattern "llama-*-bin-win-vulkan-x64.zip" -DestRel (Join-Path $base "vulkan")
           Expand-LlamaBundle -LikePattern "llama-*-bin-win-cpu-x64.zip" -DestRel (Join-Path $base "cpu")
 
-      # Latest ggml-org/llama.cpp release: macOS tarball (Metal) includes dylibs next to llama-server
+      # Latest ggml-org/llama.cpp prerelease: macOS tarball (Metal) includes dylibs next to llama-server
+      # Note: binaries are published as prereleases (bXXXX); /releases/latest returns non-prerelease v0.2.0 with no assets.
       - name: Download llama-server bundle (macOS)
         if: startsWith(matrix.platform, 'macos-')
         shell: bash
@@ -294,12 +297,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          API_URL="https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
           REL_JSON=$(curl -fsSL \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "User-Agent: PromptPilot-CI" \
-            "$API_URL")
+            "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20" | jq '[.[] | select(.prerelease==true)][0]')
+          if ! echo "$REL_JSON" | jq -e '.tag_name' >/dev/null 2>&1; then
+            echo "Failed to fetch prerelease JSON for llama.cpp"
+            exit 1
+          fi
           case "${{ matrix.rust-target }}" in
             aarch64-apple-darwin)
               SUFFIX="bin-macos-arm64.tar.gz"
