@@ -149,9 +149,9 @@ jobs:
             $runtimeSha = $env:PY_RUNTIME_SHA_WINDOWS.ToLowerInvariant()
           }
           $lockFile = [string]$manifest.pythonPackages.lockFile
-          $host = ([uri]$runtimeUrl).Host
-          if (-not ($manifest.allowedHosts -contains $host)) {
-            throw "Runtime host '$host' is not allowlisted."
+          $runtimeHost = ([uri]$runtimeUrl).Host
+          if (-not ($manifest.allowedHosts -contains $runtimeHost)) {
+            throw "Runtime host '$runtimeHost' is not allowlisted."
           }
 
           $archivePath = Join-Path $env:RUNNER_TEMP "python-runtime.tar.gz"
@@ -234,9 +234,10 @@ jobs:
           STAGE_DIR="$(mktemp -d)"
           export STAGE_DIR
           tar xzf "$ARCHIVE_PATH" -C "$STAGE_DIR"
-          PYTHON_PATH=$(find "$STAGE_DIR" -type f -name "python3" -path "*/bin/*" | head -1)
+          PYTHON_PATH=$(find "$STAGE_DIR" \( -name "python3" -o -name "python3.[0-9]*" -o -name "python" \) -path "*/bin/*" | head -1)
           if [ -z "${PYTHON_PATH}" ]; then
             echo "Unable to locate python3 in extracted runtime."
+            find "$STAGE_DIR" -maxdepth 4
             exit 1
           fi
 
@@ -244,7 +245,10 @@ jobs:
           mkdir -p "$RUNTIME_DEST"
           ROOT_DIR="$(cd "$(dirname "$PYTHON_PATH")/.." && pwd)"
           cp -R "$ROOT_DIR"/. "$RUNTIME_DEST"/
-          chmod +x "$RUNTIME_DEST/bin/python3"
+          if [ ! -f "$RUNTIME_DEST/bin/python3" ] && [ -f "$RUNTIME_DEST/bin/python3.12" ]; then
+            ln -sf python3.12 "$RUNTIME_DEST/bin/python3"
+          fi
+          chmod +x "$RUNTIME_DEST/bin"/python*
 
           "$RUNTIME_DEST/bin/python3" -m pip install --upgrade pip
           "$RUNTIME_DEST/bin/python3" -m pip install --no-cache-dir -r "$LOCK_FILE"
