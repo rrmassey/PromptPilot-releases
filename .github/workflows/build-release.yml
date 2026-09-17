@@ -27,38 +27,55 @@ jobs:
 
       - name: Extract version from tag
         id: extract
+        env:
+          TAG: ${{ github.event.client_payload.tag }}
         run: |
-          TAG=${{ github.event.client_payload.tag }}
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Refusing non-semver release tag: $TAG"
+            exit 1
+          fi
           VERSION=${TAG#v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Bump Cargo.toml
+        env:
+          VERSION: ${{ steps.extract.outputs.version }}
         run: |
-          sed -i "s/^version = \".*\"/version = \"${{ steps.extract.outputs.version }}\"/" desktop/src-tauri/Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" desktop/src-tauri/Cargo.toml
 
       - name: Bump tauri.conf.json
+        env:
+          VERSION: ${{ steps.extract.outputs.version }}
         run: |
-          jq --arg v "${{ steps.extract.outputs.version }}" '.version = $v' desktop/src-tauri/tauri.conf.json > tmp.json && mv tmp.json desktop/src-tauri/tauri.conf.json
+          jq --arg v "$VERSION" '.version = $v' desktop/src-tauri/tauri.conf.json > tmp.json && mv tmp.json desktop/src-tauri/tauri.conf.json
 
       - name: Bump package.json
+        env:
+          VERSION: ${{ steps.extract.outputs.version }}
         run: |
-          jq --arg v "${{ steps.extract.outputs.version }}" '.version = $v' package.json > tmp.json && mv tmp.json package.json
+          jq --arg v "$VERSION" '.version = $v' package.json > tmp.json && mv tmp.json package.json
 
       - name: Bump src/config.ts download URLs
+        env:
+          VERSION: ${{ steps.extract.outputs.version }}
         run: |
-          V=${{ steps.extract.outputs.version }}
+          V="$VERSION"
           sed -i "s/VERSION: '[^']*'/VERSION: '$V'/" src/config.ts
           sed -i "s|releases/download/v[^/]*/PromptPilot_[^']*_aarch64\.dmg|releases/download/v$V/PromptPilot_${V}_aarch64.dmg|g" src/config.ts
           sed -i "s|releases/download/v[^/]*/PromptPilot_[^']*_x64\.dmg|releases/download/v$V/PromptPilot_${V}_x64.dmg|g" src/config.ts
           sed -i "s|releases/download/v[^/]*/PromptPilot_[^']*_x64-setup\.exe|releases/download/v$V/PromptPilot_${V}_x64-setup.exe|g" src/config.ts
 
       - name: Commit version bumps back to private repo
+        env:
+          VERSION: ${{ steps.extract.outputs.version }}
+          SOURCE_REPO_PAT: ${{ secrets.SOURCE_REPO_PAT }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${{ secrets.SOURCE_REPO_PAT }}@github.com/rrmassey/PromptPilot_v2.5.git
+          git remote set-url origin "https://x-access-token:${SOURCE_REPO_PAT}@github.com/rrmassey/PromptPilot_v2.5.git"
           git add desktop/src-tauri/Cargo.toml desktop/src-tauri/tauri.conf.json package.json src/config.ts
-          git diff --staged --quiet || git commit -m "chore: bump version to ${{ steps.extract.outputs.version }} [skip ci]"
+          git diff --staged --quiet || git commit -m "chore: bump version to ${VERSION} [skip ci]"
           git push origin HEAD:main
 
       - name: Create GitHub release
@@ -67,7 +84,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.client_payload.tag }}
         run: |
-          set -e
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Refusing non-semver release tag: $TAG"
+            exit 1
+          fi
 
           # Create release only if it doesn't already exist (idempotent for re-runs)
           if ! gh release view "$TAG" --repo rrmassey/PromptPilot-releases >/dev/null 2>&1; then
@@ -102,6 +123,17 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
+      - name: Require claim-classifier bundle contract
+        shell: bash
+        env:
+          BUNDLE_CLAIM_CLASSIFIER: ${{ github.event.client_payload.bundle_claim_classifier }}
+        run: |
+          set -euo pipefail
+          if [ "$BUNDLE_CLAIM_CLASSIFIER" != "true" ]; then
+            echo "Refusing to ship without bundle_claim_classifier=true from the private Release dispatch."
+            exit 1
+          fi
+
       - name: Checkout private source (with bumped versions)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -122,6 +154,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Assert claim-classifier bundle pins match Rust
+        run: node scripts/ci/assert-claim-classifier-bundle-pins.mjs
+
+      - name: Assert llama-server bundle pins
+        run: node scripts/ci/assert-llama-server-bundle-pins.mjs
 
       - name: Build Frontend
         run: npm run build
@@ -179,8 +217,7 @@ jobs:
           New-Item -ItemType Directory -Path $runtimeDest -Force | Out-Null
           Copy-Item -Path (Join-Path $runtimeRoot "*") -Destination $runtimeDest -Recurse -Force
 
-          & (Join-Path $runtimeDest "python.exe") -m pip install --upgrade pip
-          & (Join-Path $runtimeDest "python.exe") -m pip install --no-cache-dir -r $lockFile
+          & (Join-Path $runtimeDest "python.exe") -m pip install --no-cache-dir --require-hashes -r $lockFile
           & (Join-Path $runtimeDest "python.exe") -c "from liteparse import LiteParse; print('liteparse-ok')"
 
       - name: Provision bundled Python runtime (macOS)
@@ -250,111 +287,36 @@ jobs:
           fi
           chmod +x "$RUNTIME_DEST/bin"/python*
 
-          "$RUNTIME_DEST/bin/python3" -m pip install --upgrade pip
-          "$RUNTIME_DEST/bin/python3" -m pip install --no-cache-dir -r "$LOCK_FILE"
+          "$RUNTIME_DEST/bin/python3" -m pip install --no-cache-dir --require-hashes -r "$LOCK_FILE"
           "$RUNTIME_DEST/bin/python3" -c "from liteparse import LiteParse; print('liteparse-ok')"
 
-      # Latest ggml-org/llama.cpp prerelease: full Windows zips into cuda/vulkan/cpu (DLLs beside llama-server.exe)
-      # Note: binaries are published as prereleases (bXXXX); /releases/latest returns non-prerelease v0.2.0 with no assets.
-      - name: Download llama-server bundles (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $ErrorActionPreference = "Stop"
-          $headers = @{
-            Accept = "application/vnd.github+json"
-            "User-Agent" = "PromptPilot-CI"
-            Authorization = "Bearer $env:GITHUB_TOKEN"
-          }
-          $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20" -Headers $headers
-          $release = $releases | Where-Object { $_.prerelease -eq $true } | Select-Object -First 1
-          if (-not $release) { throw "No prerelease found for ggml-org/llama.cpp" }
-          function Expand-LlamaBundle {
-            param(
-              [Parameter(Mandatory)] [string]$LikePattern,
-              [Parameter(Mandatory)] [string]$DestRel
-            )
-            $asset = $release.assets | Where-Object { $_.name -like $LikePattern } | Select-Object -First 1
-            if (-not $asset) {
-              throw "No llama.cpp asset matching: $LikePattern"
-            }
-            $zipPath = Join-Path $env:RUNNER_TEMP $asset.name
-            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -Headers $headers
-            $dest = Join-Path $PWD $DestRel
-            New-Item -ItemType Directory -Path $dest -Force | Out-Null
-            Expand-Archive -Path $zipPath -DestinationPath $dest -Force
-            Remove-Item $zipPath -Force
-          }
-          $base = "desktop/src-tauri/resources/llama-server"
-          Expand-LlamaBundle -LikePattern "llama-*-bin-win-cuda-12.4-x64.zip" -DestRel (Join-Path $base "cuda")
-          Expand-LlamaBundle -LikePattern "llama-*-bin-win-vulkan-x64.zip" -DestRel (Join-Path $base "vulkan")
-          Expand-LlamaBundle -LikePattern "llama-*-bin-win-cpu-x64.zip" -DestRel (Join-Path $base "cpu")
-
-      # Latest ggml-org/llama.cpp prerelease: macOS tarball (Metal) includes dylibs next to llama-server
-      # Note: binaries are published as prereleases (bXXXX); /releases/latest returns non-prerelease v0.2.0 with no assets.
-      - name: Download llama-server bundle (macOS)
-        if: startsWith(matrix.platform, 'macos-')
+      - name: Bundle llama-server (pinned ggml-org/llama.cpp)
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          REL_JSON=$(curl -fsSL \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "User-Agent: PromptPilot-CI" \
-            "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20" | jq '[.[] | select(.prerelease==true)][0]')
-          if ! echo "$REL_JSON" | jq -e '.tag_name' >/dev/null 2>&1; then
-            echo "Failed to fetch prerelease JSON for llama.cpp"
-            exit 1
-          fi
-          case "${{ matrix.rust-target }}" in
-            aarch64-apple-darwin)
-              SUFFIX="bin-macos-arm64.tar.gz"
-              ;;
-            x86_64-apple-darwin)
-              SUFFIX="bin-macos-x64.tar.gz"
-              ;;
-            *)
-              echo "Unsupported macOS rust target: ${{ matrix.rust-target }}"
-              exit 1
-              ;;
-          esac
-          NAME=$(echo "$REL_JSON" | jq -r --arg sfx "$SUFFIX" '.assets[] | select(.name|endswith($sfx)) | .name' | head -1)
-          if [ -z "$NAME" ] || [ "$NAME" = "null" ]; then
-            echo "No asset ending with ${SUFFIX} in latest llama.cpp release"
-            exit 1
-          fi
-          URL=$(echo "$REL_JSON" | jq -r --arg n "$NAME" '.assets[] | select(.name==$n) | .browser_download_url')
-          WORK=$(mktemp -d)
-          curl -fsSL \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "User-Agent: PromptPilot-CI" \
-            -o "$WORK/$NAME" \
-            "$URL"
-          tar xzf "$WORK/$NAME" -C "$WORK"
-          ROOT=$(find "$WORK" -mindepth 1 -maxdepth 1 -type d -name 'llama-*' | head -1)
-          if [ -z "$ROOT" ]; then
-            echo "Could not find llama-* root directory in archive"
-            exit 1
-          fi
-          DEST="desktop/src-tauri/resources/llama-server"
-          mkdir -p "$DEST"
-          cp -R "$ROOT"/* "$DEST/"
-          chmod +x "$DEST/llama-server"
+          RUST_TARGET: ${{ matrix.rust-target }}
+        run: node scripts/ci/bundle-llama-server.mjs --target "$RUST_TARGET"
+
+      - name: Bundle claim classifier (ONNX + Microsoft ORT)
+        shell: bash
+        env:
+          RUST_TARGET: ${{ matrix.rust-target }}
+        run: node scripts/ci/bundle-claim-classifier.mjs --target "$RUST_TARGET"
 
       - name: Verify bundled runtime files before publish
+        env:
+          MATRIX_PLATFORM: ${{ matrix.platform }}
+          RUST_TARGET: ${{ matrix.rust-target }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${{ matrix.platform }}" = "windows-latest" ]; then
+          if [ "$MATRIX_PLATFORM" = "windows-latest" ]; then
             test -f desktop/src-tauri/resources/python-runtime/python.exe
+            test -f desktop/src-tauri/resources/llama-server/cpu/llama-server.exe
           else
             test -f desktop/src-tauri/resources/python-runtime/bin/python3
+            test -f desktop/src-tauri/resources/llama-server/llama-server
           fi
+          node scripts/ci/assert-claim-classifier-bundled-files.mjs --target "$RUST_TARGET"
 
       - name: Build and Release
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
@@ -381,7 +343,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.client_payload.tag }}
         run: |
-          gh release download $TAG \
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Refusing non-semver release tag: $TAG"
+            exit 1
+          fi
+          gh release download "$TAG" \
             --repo rrmassey/PromptPilot-releases \
             --pattern "latest.json" \
             --dir /tmp/release-assets
@@ -396,10 +363,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.client_payload.tag }}
         run: |
-          gh release upload $TAG /tmp/release-assets/update.json \
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Refusing non-semver release tag: $TAG"
+            exit 1
+          fi
+          gh release upload "$TAG" /tmp/release-assets/update.json \
             --repo rrmassey/PromptPilot-releases \
             --clobber
-          gh release delete-asset $TAG latest.json \
+          gh release delete-asset "$TAG" latest.json \
             --repo rrmassey/PromptPilot-releases \
             --yes
 
@@ -411,11 +383,19 @@ jobs:
           ref: main
 
       - name: Copy update.json to private repo and commit
+        env:
+          TAG: ${{ github.event.client_payload.tag }}
+          SOURCE_REPO_PAT: ${{ secrets.SOURCE_REPO_PAT }}
         run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Refusing non-semver release tag: $TAG"
+            exit 1
+          fi
           cp /tmp/release-assets/update.json public/update.json
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${{ secrets.SOURCE_REPO_PAT }}@github.com/rrmassey/PromptPilot_v2.5.git
+          git remote set-url origin "https://x-access-token:${SOURCE_REPO_PAT}@github.com/rrmassey/PromptPilot_v2.5.git"
           git add public/update.json
-          git diff --staged --quiet || git commit -m "chore: update update.json for ${{ github.event.client_payload.tag }} [skip ci]"
+          git diff --staged --quiet || git commit -m "chore: update update.json for ${TAG} [skip ci]"
           git push origin HEAD:main
