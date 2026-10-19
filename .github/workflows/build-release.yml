@@ -38,33 +38,10 @@ jobs:
           VERSION=${TAG#v}
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Bump Cargo.toml
+      - name: Bump version across project files
         env:
           VERSION: ${{ steps.extract.outputs.version }}
-        run: |
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" desktop/src-tauri/Cargo.toml
-
-      - name: Bump tauri.conf.json
-        env:
-          VERSION: ${{ steps.extract.outputs.version }}
-        run: |
-          jq --arg v "$VERSION" '.version = $v' desktop/src-tauri/tauri.conf.json > tmp.json && mv tmp.json desktop/src-tauri/tauri.conf.json
-
-      - name: Bump package.json
-        env:
-          VERSION: ${{ steps.extract.outputs.version }}
-        run: |
-          jq --arg v "$VERSION" '.version = $v' package.json > tmp.json && mv tmp.json package.json
-
-      - name: Bump src/config.ts download URLs
-        env:
-          VERSION: ${{ steps.extract.outputs.version }}
-        run: |
-          V="$VERSION"
-          sed -i "s/VERSION: '[^']*'/VERSION: '$V'/" src/config.ts
-          sed -i "s|releases/download/v[^/]*/PromptPilot_[^']*_aarch64\.dmg|releases/download/v$V/PromptPilot_${V}_aarch64.dmg|g" src/config.ts
-          sed -i "s|releases/download/v[^/]*/PromptPilot_[^']*_x64\.dmg|releases/download/v$V/PromptPilot_${V}_x64.dmg|g" src/config.ts
-          sed -i "s|releases/download/v[^/]*/PromptPilot_[^']*_x64-setup\.exe|releases/download/v$V/PromptPilot_${V}_x64-setup.exe|g" src/config.ts
+        run: node scripts/ci/bump-version.mjs "$VERSION"
 
       - name: Commit version bumps back to private repo
         env:
@@ -74,9 +51,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url origin "https://x-access-token:${SOURCE_REPO_PAT}@github.com/rrmassey/PromptPilot_v2.5.git"
-          git add desktop/src-tauri/Cargo.toml desktop/src-tauri/tauri.conf.json package.json src/config.ts
+          git add package.json package-lock.json desktop/package.json desktop/package-lock.json desktop/src-tauri/Cargo.toml desktop/src-tauri/Cargo.lock desktop/src-tauri/tauri.conf.json src/config.ts docs/ARCHITECTURE.md
           git diff --staged --quiet || git commit -m "chore: bump version to ${VERSION} [skip ci]"
           git push origin HEAD:main
+
 
       - name: Create GitHub release
         id: create_release
