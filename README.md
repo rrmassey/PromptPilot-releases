@@ -49,20 +49,7 @@ PromptPilot follows a structured verification pipeline:
 
 ---
 
-## 5. Technical Implementation
-
-- **Desktop Framework:** Tauri v2 (Rust) for native OS performance, memory isolation, and OS Keyring integration.
-- **Frontend:** React 18, TypeScript (Strict Mode), Vite.
-- **Claim Classifier:** Microsoft ONNX Runtime (`ort`) running DeBERTa-v3 zero-shot NLI in-process with CPU SIMD acceleration.
-- **PDF Extraction Engine:** LiteParse (Apache-2.0 / PDFium) bundled Python runtime (zero AGPL code).
-- **DOCX Extraction & Preview:** Mammoth (BSD-2-Clause) for raw text extraction and docx-preview (Apache-2.0) for native layout rendering.
-- **Styling:** Custom High-Contrast Matte design system with Vanilla CSS and responsive glassmorphism.
-- **Local Storage:** Client-side IndexedDB (`LocalCacheService` and `conversationDb`) and AES-256-GCM encrypted local state. Zero cloud database dependency.
-- **License:** Proprietary software governed by the PromptPilot Desktop EULA (Free Community Tier) with permissive open-source carve-outs for third-party libraries.
-
----
-
-## 6. Installation & Downloads
+## 5. Installation & Downloads
 
 PromptPilot is distributed as a standalone desktop application for macOS and Windows.
 
@@ -75,16 +62,18 @@ Simply download and run the installer for your platform to get started with the 
 
 ---
 
-## 7. Privacy & Data Governance
+## 6. Privacy & Data Governance
 
 PromptPilot is engineered from the ground up with a zero-knowledge privacy philosophy:
 - **No Central Document Storage:** PromptPilot operates no servers that store your documents, prompts, or chat histories.
 - **Zero In-App Telemetry on Desktop:** The desktop application contains no analytics SDKs, advertising trackers, or behavioral telemetry.
+- **Local Encrypted State:** Document cache and chat histories are stored entirely in client-side IndexedDB with optional AES-256-GCM encryption. Zero cloud database dependency.
 - **Data Portability & Erasure:** Full compliance with GDPR (Art. 17 & 20) and CCPA—export all data or purge all local stores with a single click in Settings.
 - **Opt-In Web Analytics:** Public website analytics are strictly opt-in and automatically respect browser Global Privacy Control (GPC) signals.
 
 ---
 
-## 8. Legal & Regulatory Advisory
+## 7. License & Legal Advisory
 
-*PromptPilot uses artificial intelligence models. AI models are probabilistic and can make mistakes or produce inaccurate outputs. PromptPilot is an academic research assistance tool and verification aid—not a source of truth or a substitute for primary-source review. PromptPilot does not provide legal, financial, or medical advice.*
+- **License:** Proprietary software governed by the PromptPilot Desktop EULA (Free Community Tier) with permissive open-source carve-outs for third-party libraries.
+- **Advisory:** *PromptPilot uses artificial intelligence models. AI models are probabilistic and can make mistakes or produce inaccurate outputs. PromptPilot is an academic research assistance tool and verification aid—not a source of truth or a substitute for primary-source review. PromptPilot does not provide legal, financial, or medical advice.*
