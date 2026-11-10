@@ -27,12 +27,14 @@ PromptPilot solves both challenges through a **strictly local-first architecture
 
 ## 3. Core Capabilities
 
-- **Academic Registry Grounding:** Queries public scholarly databases (CrossRef, OpenAlex, ArXiv, Wikipedia, Semantic Scholar, Unpaywall) to verify paper existence, authors, publication years, and DOIs.
+- **Scholarly Registry Grounding:** Cross-references citations against public academic registries (CrossRef batch resolver as primary, OpenAlex open academic graph as bounded secondary fallback, Unpaywall, and arXiv preprints) to verify paper existence, authors, publication years, and DOIs.
+- **Real-Time Web Verification:** Grounds claims and general facts via privacy-preserving web search providers (Brave Search, Tavily, Exa Neural search, Parallel AI, and Jina Reader).
+- **Embedded Neural Claim Classifier:** Executes sentence checkability and claim classification on-device via a bundled DeBERTa-v3 zero-shot NLI model powered by Microsoft ONNX Runtime (`ort`).
 - **Local-First Processing:** Document text extraction and local LLM inferences execute entirely on your device via loopback interfaces (`127.0.0.1`).
-- **Flexible LLM Engine Options:** Native support for built-in local inference (`llama-server` / GGUF), local Ollama, Ollama Cloud, and LM Studio custom port servers.
-- **Client-Side Document Parsing:** High-performance local text extraction for PDFs (via Apache-2.0 LiteParse) and DOCX files.
+- **Flexible Local AI Engine Options:** Native support for built-in local inference (`llama-server` / GGUF), local Ollama, LM Studio, and MSTY.
+- **Client-Side Document Parsing:** High-performance local text extraction for PDFs (via Apache-2.0 LiteParse bundled sidecar) and DOCX files (via mammoth and docx-preview).
 - **Pre-Flight PII Redaction:** Automatically scrubs personal identifiable information (emails, phone numbers, SSNs, API keys) from search queries before external registry lookups.
-- **Hardware-Backed Credential Security:** Search API keys (Brave Search, Tavily) are encrypted and stored in your native OS credential vault (macOS Keychain / Windows Credential Manager).
+- **Hardware-Backed Credential Security:** Search and service API keys (Brave, Tavily, Exa, Jina, local LLMs) and recovery escrow secrets are encrypted and stored in your native OS credential vault (macOS Keychain / Windows Credential Manager).
 - **Exportable Audit Reports:** Generates structured verification logs and PDF reports complete with regulatory disclaimers and methodology audit trails.
 
 ---
@@ -42,7 +44,7 @@ PromptPilot solves both challenges through a **strictly local-first architecture
 PromptPilot follows a structured verification pipeline:
 
 1. **Extraction & Parsing:** Client-side extractors parse the document text, separating prose, citations (APA, MLA, Chicago, IEEE), and inline markers.
-2. **Bibliographic Grounding:** The engine searches scholarly registries for candidate DOI, title, and author matches using polite, rate-limited API pools.
+2. **Bibliographic Grounding:** The engine searches scholarly registries for candidate DOI, title, and author matches using polite, rate-limited API pools (CrossRef primary, OpenAlex fallback, arXiv, Unpaywall).
 3. **Adjudication & Cross-Examination:** The model evaluates the gathered evidence packet against the document claim using deterministic verification rules (Verified, Unverified, Ambiguous, Contradicted, or Source Limit).
 
 ---
@@ -51,9 +53,11 @@ PromptPilot follows a structured verification pipeline:
 
 - **Desktop Framework:** Tauri v2 (Rust) for native OS performance, memory isolation, and OS Keyring integration.
 - **Frontend:** React 18, TypeScript (Strict Mode), Vite.
-- **PDF Extraction Engine:** LiteParse (Apache-2.0 / PDFium) bundled runtime.
+- **Claim Classifier:** Microsoft ONNX Runtime (`ort`) running DeBERTa-v3 zero-shot NLI in-process with CPU SIMD acceleration.
+- **PDF Extraction Engine:** LiteParse (Apache-2.0 / PDFium) bundled Python runtime (zero AGPL code).
+- **DOCX Extraction & Preview:** Mammoth (BSD-2-Clause) for raw text extraction and docx-preview (Apache-2.0) for native layout rendering.
 - **Styling:** Custom High-Contrast Matte design system with Vanilla CSS and responsive glassmorphism.
-- **Local Storage:** Client-side IndexedDB (`LocalCacheService`) and AES-256-GCM encrypted local state. Zero cloud database dependency.
+- **Local Storage:** Client-side IndexedDB (`LocalCacheService` and `conversationDb`) and AES-256-GCM encrypted local state. Zero cloud database dependency.
 - **License:** Proprietary software governed by the PromptPilot Desktop EULA (Free Community Tier) with permissive open-source carve-outs for third-party libraries.
 
 ---
